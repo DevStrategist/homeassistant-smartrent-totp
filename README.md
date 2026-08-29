@@ -1,64 +1,69 @@
-# SmartRent Home Assistant Component
+# SmartRent for Home Assistant — unattended TOTP authentication
 
-[![GitHub Release][releases-shield]][releases]
-[![HACS Shield][hacs-shield]](https://github.com/hacs/integration)
-[![GitHub][license-shield]](LICENSE.txt)
-[![Code style: black][black-shield]](https://github.com/psf/black)
-[![Downloads][downloads-shield]][releases]
+A private fork of [ZacheryThomas/homeassistant-smartrent][upstream] that stops SmartRent
+asking for a two-factor code every single time Home Assistant restarts.
 
-> [!WARNING]
-> I moved out of my apartment and don't have a way to access SmartRent anymore. I will add bug fix PRs as ppl contribute them
+## The problem
 
-This is a basic Homeassistant component to support SmartRent Locks, Thermostats, Leak Sensors, Motion Sensors, and Light Switches. This component uses the `smartrent-py` library that can be found [here](https://github.com/ZacheryThomas/smartrent-py)!
+Upstream stores the one-time 2FA code you typed during setup and replays it verbatim on
+every start. A one-time code is single-use, so SmartRent rejects it:
 
-Feel free to ⭐️ this repo to get notified about the latest features!
-
-![example screenshot](dashboard_screenshot.png)
-
-## Installation
-
-You can either install this integration as an HACS custom component or install it mannually
-### Installing with HACS
-* Go to the `HACS` tab and select `Integrations`
-* Click on `Explore & Download Repositories`
-* Search for `SmartRent` and then download the repo by clicking `Download this repository with HACS`
-* *You will then have to restart your Home Assistant instance*
-* After that, you can add the Integration as usual by going to `Configuraton > Devices & Services > Add Integration`
-
-
-### Installing manually
-
-#### Moving custom component to right directory
 ```
-# How your HA config directory should look
-
-config
-└── ...
-└── configuration.yaml
-└── secrets.yaml
-└── custom_components
-    └── smartrent
-        └── climate.py
-        └── lock.py
-        └── manifest.json
-        └── ...
+Config entry '<you>' for smartrent integration could not authenticate: Credentials expired!
+Invalid auth: Token not retrieved! [{'code': 'invalid', 'description': 'Invalid code'}]
 ```
 
-You have to move all content in the `custom_components/smartrent` directory to the same location in Home Assistant. If a `custom_components` directory does not already exist in your Home Assistant instance, you will have to make one. You can learn more [here](https://developers.home-assistant.io/docs/creating_integration_file_structure#where-home-assistant-looks-for-integrations).
+The config entry drops to `setup_error`, a reauth flow opens, and your locks go
+`unavailable` until a human types a fresh code. Every restart, every update, every power cut.
 
-After all of those are in place, you can restart your Home Assistant instance and the component should load.
+## What this fork changes
 
-#### Start the integration
-You should be able to now load the integration. This can be done by going to `Configuraton > Devices & Services > Add Integration`
+**1. The refresh token is persisted and restored** (from upstream PR #50 by @abipalli).
+`smartrent-py` skips the 2FA branch entirely when `_refresh_token` is set, so the normal
+startup path never touches two-factor at all. The token rotates on every refresh and the
+old one is invalidated server-side, so it is written back immediately rather than at
+unload — a crash or power cut would otherwise leave an invalidated token on disk.
 
-You should be able to search for SmartRent and then enter your email and password in the popup.
+**2. The 2FA code is generated locally from the TOTP secret.** SmartRent's two-factor is
+TOTP (RFC 6238), so the code can be derived from the shared secret. When the refresh token
+is ever rejected, Home Assistant re-authenticates on its own instead of waiting for you.
 
-[license-shield]: https://img.shields.io/github/license/abipalli/homeassistant-smartrent.svg?style=for-the-badge
-[hacs-shield]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge
-[black-shield]: https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge
+**3. It works around a `smartrent-py` bug.** In `_async_refresh_token`, the
+`if self._refresh_token:` branch falls back to `_async_refresh_tokens_via_email()` but
+never handles the `tfa_api_token` that a 2FA account gets back — so it raises `KeyError`
+on `response["access_token"]`. This fork clears the dead token and redoes a clean full
+login with a freshly generated code.
 
-[releases-shield]: https://img.shields.io/github/release/abipalli/homeassistant-smartrent.svg?style=for-the-badge
-[releases]: https://github.com/abipalli/homeassistant-smartrent/releases
-[commits-shield]: https://img.shields.io/github/commit-activity/y/abipalli/homeassistant-smartrent.svg?style=for-the-badge
-[commits]: https://github.com/abipalli/homeassistant-smartrent/commits/main
-[downloads-shield]: https://img.shields.io/github/downloads/abipalli/homeassistant-smartrent/total?color=green&style=for-the-badge
+Because a TOTP code is single-use, a retry inside the same 30-second window waits for the
+next one rather than replaying a burned code.
+
+## Setup
+
+Add this repository to HACS as a custom repository (category: Integration), download it,
+restart Home Assistant, then add the integration:
+
+| Field | Value |
+|---|---|
+| Email | your SmartRent login |
+| Password | your SmartRent password |
+| 2fa Code | **leave blank** when using a secret |
+| Authenticator secret key | the TOTP seed from your authenticator app |
+
+The seed is the base32 string behind the QR code when you set up your authenticator —
+spaces, lowercase and missing `=` padding are all accepted.
+
+## Security note
+
+The TOTP secret is stored in `.storage/core.config_entries` in plaintext, next to the
+password. Anyone holding that file — or a backup of it, or the SD card — has both factors,
+so for this account two-factor becomes effectively single-factor on this machine. If that
+account opens a door, weigh that before using it. Leave the field blank and this fork still
+gives you change 1, which removes the restart prompt on its own.
+
+## Credit
+
+Upstream is [ZacheryThomas/homeassistant-smartrent][upstream] (MIT); the refresh-token
+persistence is [PR #50][pr50] by @abipalli. Everything here inherits that MIT license.
+
+[upstream]: https://github.com/ZacheryThomas/homeassistant-smartrent
+[pr50]: https://github.com/ZacheryThomas/homeassistant-smartrent/pull/50

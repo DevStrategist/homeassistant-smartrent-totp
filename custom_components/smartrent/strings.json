@@ -3,26 +3,29 @@
     "step": {
       "user": {
         "title": "Configure SmartRent",
-        "description": "Enter your SmartRent credentials",
+        "description": "Enter your SmartRent credentials. If your account uses an authenticator app, paste its TOTP secret into 'Authenticator secret key' and Home Assistant will generate the codes itself \u2014 you will not be asked for one again, including after a restart. Leave the one-off '2fa Code' blank when you do that.",
         "data": {
           "username": "Email",
           "password": "Password",
-          "token": "2fa Code (optional)"
+          "token": "2fa Code (optional)",
+          "totp_secret": "Authenticator secret key (optional)"
         }
       },
       "reauth": {
         "title": "Configure SmartRent",
-        "description": "Enter your SmartRent credentials",
+        "description": "Enter your SmartRent credentials. If your account uses an authenticator app, paste its TOTP secret into 'Authenticator secret key' and Home Assistant will generate the codes itself \u2014 you will not be asked for one again, including after a restart. Leave the one-off '2fa Code' blank when you do that.",
         "data": {
           "username": "Email",
           "password": "Password",
-          "token": "2fa Code (optional)"
+          "token": "2fa Code (optional)",
+          "totp_secret": "Authenticator secret key (optional)"
         }
       }
     },
     "error": {
       "invalid_auth": "Auth Failed",
-      "tfa_not_provided": "TFA Needed but not provided"
+      "tfa_not_provided": "TFA Needed but not provided",
+      "invalid_totp_secret": "That authenticator secret is not valid base32"
     },
     "abort": {
       "already_configured": "Already Configured Account",

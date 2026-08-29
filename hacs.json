@@ -1,6 +1,5 @@
 {
-  "name": "SmartRent",
+  "name": "SmartRent (unattended TOTP auth)",
   "render_readme": true,
-  "zip_release": true,
-  "filename": "smartrent.zip"
+  "homeassistant": "2025.1.1"
 }

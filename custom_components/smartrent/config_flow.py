@@ -10,7 +10,8 @@ from homeassistant.helpers import aiohttp_client
 from smartrent import async_login
 from smartrent.utils import InvalidAuthError
 
-from .const import DOMAIN
+from .const import CONF_TOTP_SECRET, DOMAIN
+from .totp import make_totp
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ SMARTRENT_SCHEMA = vol.Schema(
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_TOKEN): str,
+        vol.Optional(CONF_TOTP_SECRET): str,
     }
 )
 
@@ -35,12 +37,25 @@ class SmartRentFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
     async def _check_creds_input(
         self, user_input: Mapping[str, Any]
     ) -> Optional[dict[str, str]]:
-        """Check to see if provided creds are accepted by SmartRent"""
+        """Check to see if provided creds are accepted by SmartRent.
+
+        When a TOTP secret is supplied we generate the code here rather than
+        making the user type one, which is the whole point of storing the seed:
+        every later login can do the same without a human.
+        """
         session = aiohttp_client.async_get_clientsession(self.hass)
+        username = user_input[CONF_USERNAME]
+        password = user_input[CONF_PASSWORD]
+        tfa_token = user_input.get(CONF_TOKEN)
+
         try:
-            username = user_input[CONF_USERNAME]
-            password = user_input[CONF_PASSWORD]
-            tfa_token = user_input.get(CONF_TOKEN)
+            totp = make_totp(user_input.get(CONF_TOTP_SECRET))
+        except ValueError:
+            return {CONF_TOTP_SECRET: "invalid_totp_secret"}
+        if totp is not None:
+            tfa_token = totp.now()
+
+        try:
             await async_login(username, password, session, tfa_token=tfa_token)
         except InvalidAuthError as exc:
             _LOGGER.error(f"Invalid auth: {exc}")
@@ -56,7 +71,7 @@ class SmartRentFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         return await self.async_step_user(import_config)
 
     async def async_step_reauth(self, user_input=None):
-        """Handle the initial step."""
+        """Handle re-authentication."""
         if not user_input:
             _LOGGER.info("no user input. showing reauth form")
             return await self._show_form(step_id="reauth")
@@ -65,7 +80,14 @@ class SmartRentFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
             return await self._show_form(step_id="reauth", errors=errors)
 
         if entry := await self.async_set_unique_id(self.unique_id):
-            self.hass.config_entries.async_update_entry(entry, data=user_input)
+            # Keep a previously stored TOTP secret when the field is left blank,
+            # and drop the old refresh token so the next setup logs in cleanly.
+            data = {**entry.data, **user_input}
+            if not user_input.get(CONF_TOTP_SECRET):
+                data.pop(CONF_TOTP_SECRET, None)
+                if entry.data.get(CONF_TOTP_SECRET):
+                    data[CONF_TOTP_SECRET] = entry.data[CONF_TOTP_SECRET]
+            self.hass.config_entries.async_update_entry(entry, data=data)
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(entry.entry_id)
             )

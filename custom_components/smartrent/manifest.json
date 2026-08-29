@@ -2,15 +2,16 @@
   "domain": "smartrent",
   "name": "SmartRent",
   "codeowners": [
-    "@abipalli"
+    "@DevStrategist"
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/abipalli/homeassistant-smartrent",
+  "documentation": "https://github.com/DevStrategist/homeassistant-smartrent-totp",
   "iot_class": "cloud_push",
-  "issue_tracker": "https://github.com/abipalli/homeassistant-smartrent/issues",
+  "issue_tracker": "https://github.com/DevStrategist/homeassistant-smartrent-totp/issues",
   "requirements": [
+    "pyotp",
     "smartrent-py==0.5.2"
   ],
-  "version": "0.6.2"
+  "version": "0.7.0"
 }
